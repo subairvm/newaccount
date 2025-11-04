@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Income & Expense — 12 Banks (Single Storage)</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --muted:#9aa4b2; --accent:#7dd3fc; --accent-2:#60a5fa;
+    --glass: rgba(255,255,255,0.03);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:
+    radial-gradient(ellipse at 10% 0%, rgba(124,58,237,0.12), transparent 10%),
+    radial-gradient(ellipse at 90% 100%, rgba(59,130,246,0.06), transparent 15%), 
+    linear-gradient(180deg, #071024 0%, #071424 100%);
+    color:#e6eef6; padding:28px;
+  }
+  .app{
+    max-width:1100px; margin:0 auto; display:grid; gap:18px;
+    grid-template-columns: 360px 1fr;
+  }
+  header{grid-column:1/-1; display:flex; justify-content:space-between; align-items:center;}
+  h1{margin:0;font-size:20px;letter-spacing:0.2px}
+  .sub{color:var(--muted); font-size:13px}
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border:1px solid rgba(255,255,255,0.03);
+    padding:16px; border-radius:12px; box-shadow:0 6px 20px rgba(2,6,23,0.6);
+  }
+
+  /* Left column: banks + totals + controls */
+  .sidebar{display:flex; flex-direction:column; gap:12px;}
+  .banks{display:flex; flex-direction:column; gap:8px; max-height:52vh; overflow:auto; padding-right:6px;}
+  .bank{
+    display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px;
+    background:var(--glass); cursor:pointer; transition:all .18s ease;
+    border:1px solid rgba(255,255,255,0.02);
+  }
+  .bank:hover{transform:translateY(-3px)}
+  .bank .dot{width:12px;height:12px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-2));box-shadow:0 6px 18px rgba(96,165,250,0.12)}
+  .bank .meta{flex:1; overflow:hidden}
+  .bank .meta .name{font-weight:600; font-size:14px; white-space:nowrap; text-overflow:ellipsis; overflow:hidden}
+  .bank .meta .bal{color:var(--muted); font-size:12px}
+  .bank.selected{outline:2px solid rgba(96,165,250,0.12); background:linear-gradient(180deg, rgba(12,18,30,0.6), rgba(8,12,22,0.4))}
+
+  .totals{display:flex; gap:10px;}
+  .tot-box{flex:1; padding:12px; border-radius:10px; background:linear-gradient(90deg, rgba(255,255,255,0.015), transparent); text-align:center}
+  .tot-box .big{font-weight:700; font-size:18px}
+  .tot-box .label{font-size:12px; color:var(--muted)}
+
+  .controls{display:flex; gap:8px; flex-wrap:wrap;}
+  .btn{
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));
+    border:none; padding:10px 12px; color:#032; font-weight:700; border-radius:10px; cursor:pointer;
+    box-shadow:0 6px 20px rgba(96,165,250,0.12);
+  }
+  .btn.ghost{background:transparent; border:1px solid rgba(255,255,255,0.06); color:var(--accent-2); box-shadow:none}
+  .btn.warn{background:linear-gradient(90deg,#fb923c,#f97316); color:#fff}
+
+  /* Right column: form + table */
+  .main{display:flex; flex-direction:column; gap:12px}
+  form.grid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+  label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+  input,select,textarea{
+    width:100%; padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.03);
+    background:transparent; color:inherit; outline:none;
+  }
+  .type-toggle{display:flex; gap:8px}
+  .pill{padding:8px 10px; border-radius:999px; cursor:pointer; border:1px solid rgba(255,255,255,0.03); font-weight:700}
+  .pill.income{background:linear-gradient(90deg,#10b981,#34d399); color:#021a14}
+  .pill.expense{background:linear-gradient(90deg,#ef4444,#fb7185); color:#2b0202}
+  .row{display:flex; gap:8px}
+  .table-wrap{overflow:auto; max-height:55vh}
+  table{width:100%; border-collapse:collapse; margin-top:6px}
+  th,td{padding:10px; text-align:left; border-bottom:1px dashed rgba(255,255,255,0.02); font-size:13px}
+  th{color:var(--muted); font-weight:600; font-size:12px}
+  .small{font-size:12px; color:var(--muted)}
+
+  .actions{display:flex; gap:6px}
+  .action-btn{padding:6px 8px; border-radius:8px; border:none; cursor:pointer; font-weight:700}
+  .edit{background:#fff2; color:var(--accent-2)}
+  .del{background:#fff1; color:#fb7185}
+
+  footer{grid-column:1/-1; margin-top:6px; color:var(--muted); font-size:13px; text-align:center}
+  @media(max-width:940px){
+    .app{grid-template-columns:1fr}
+    .sidebar{order:2}
+    .main{order:1}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Income & Expense Manager</h1>
+      <div class="sub">12 banks • Single local storage • Export / Import JSON</div>
+    </div>
+    <div>
+      <button class="btn" id="exportBtn">Export JSON</button>
+      <button class="btn ghost" id="importBtn">Import JSON</button>
+      <input type="file" id="fileInput" accept="application/json" style="display:none">
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+        <strong>Accounts (Banks)</strong>
+        <button class="btn ghost" id="addBankBtn" title="Add a new bank">+ Bank</button>
+      </div>
+      <div class="banks" id="banksList" aria-live="polite"></div>
+      <div style="margin-top:10px; display:flex; gap:8px">
+        <button class="btn ghost" id="resetBanks">Reset 12 banks</button>
+        <button class="btn warn" id="clearAll">Clear All Data</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="margin-bottom:10px"><strong>Totals</strong></div>
+      <div class="totals">
+        <div class="tot-box">
+          <div class="big" id="totalIncome">₹0</div>
+          <div class="label">Total Income</div>
+        </div>
+        <div class="tot-box">
+          <div class="big" id="totalExpense">₹0</div>
+          <div class="label">Total Expense</div>
+        </div>
+        <div class="tot-box">
+          <div class="big" id="netBalance">₹0</div>
+          <div class="label">Net</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+        <strong>Quick Filters</strong>
+        <button class="btn ghost" id="clearFilter">All</button>
+      </div>
+      <div class="small" style="margin-bottom:8px">Search by category / notes</div>
+      <input id="searchInput" placeholder="Search (category or notes)" />
+      <div style="margin-top:8px; display:flex; gap:8px">
+        <input id="fromDate" placeholder="From (DD-MM-YYYY)" />
+        <input id="toDate" placeholder="To (DD-MM-YYYY)" />
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button class="btn" id="applyFilter">Apply</button>
+        <button class="btn ghost" id="resetFilter">Reset</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+        <strong>Add Transaction</strong>
+        <div class="small">Use DD-MM-YYYY for date</div>
+      </div>
+
+      <form id="txnForm" class="grid" autocomplete="off">
+        <div>
+          <label>Type</label>
+          <div class="type-toggle">
+            <div class="pill income active" data-type="income" id="typeIncome">Income</div>
+            <div class="pill expense" data-type="expense" id="typeExpense">Expense</div>
+          </div>
+        </div>
+
+        <div>
+          <label>Bank</label>
+          <select id="bankSelect"></select>
+        </div>
+
+        <div>
+          <label>Date (DD-MM-YYYY)</label>
+          <input id="dateInput" placeholder="DD-MM-YYYY" />
+        </div>
+
+        <div>
+          <label>Amount (₹)</label>
+          <input id="amountInput" type="number" step="0.01" placeholder="0.00" />
+        </div>
+
+        <div>
+          <label>Category</label>
+          <input id="categoryInput" placeholder="Salary, Grocery, Rent..." />
+        </div>
+
+        <div>
+          <label>Notes</label>
+          <input id="notesInput" placeholder="Optional note" />
+        </div>
+
+        <div style="grid-column:1/4; display:flex; gap:8px; margin-top:8px;">
+          <button class="btn" id="saveTxnBtn" type="submit">Save Transaction</button>
+          <button class="btn ghost" id="resetFormBtn" type="button">Reset</button>
+          <div style="flex:1"></div>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <strong>Transactions</strong>
+        <div class="small" id="txnCount">0 transactions</div>
+      </div>
+
+      <div class="table-wrap">
+        <table aria-live="polite">
+          <thead>
+            <tr>
+              <th>Date</th><th>Type</th><th>Amount</th><th>Category</th><th>Bank</th><th>Notes</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="txnTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="small">
+    Built for quick local use — data stored on this device. Use Export / Import to move data between devices.
+  </footer>
+</div>
+
+<script>
+(() => {
+  // Single-local-storage key
+  const STORAGE_KEY = 'ie_app_v1_data';
+
+  // Default 12 banks
+  const DEFAULT_BANKS = [
+    'Axis Bank', 'State Bank', 'HDFC Bank', 'ICICI Bank', 'Kotak Mahindra',
+    'Punjab National', 'Bank of Baroda', 'Canara Bank', 'Yes Bank', 'IDFC First',
+    'Indian Overseas', 'Union Bank'
+  ];
+
+  // DOM refs
+  const banksList = document.getElementById('banksList');
+  const bankSelect = document.getElementById('bankSelect');
+  const txnForm = document.getElementById('txnForm');
+  const typeIncome = document.getElementById('typeIncome');
+  const typeExpense = document.getElementById('typeExpense');
+  const dateInput = document.getElementById('dateInput');
+  const amountInput = document.getElementById('amountInput');
+  const categoryInput = document.getElementById('categoryInput');
+  const notesInput = document.getElementById('notesInput');
+  const saveTxnBtn = document.getElementById('saveTxnBtn');
+  const resetFormBtn = document.getElementById('resetFormBtn');
+  const txnTableBody = document.getElementById('txnTableBody');
+  const txnCount = document.getElementById('txnCount');
+  const totalIncomeEl = document.getElementById('totalIncome');
+  const totalExpenseEl = document.getElementById('totalExpense');
+  const netBalanceEl = document.getElementById('netBalance');
+  const addBankBtn = document.getElementById('addBankBtn');
+  const resetBanksBtn = document.getElementById('resetBanks');
+  const clearAllBtn = document.getElementById('clearAll');
+  const exportBtn = document.getElementById('exportBtn');
+  const importBtn = document.getElementById('importBtn');
+  const fileInput = document.getElementById('fileInput');
+  const searchInput = document.getElementById('searchInput');
+  const fromDate = document.getElementById('fromDate');
+  const toDate = document.getElementById('toDate');
+  const applyFilter = document.getElementById('applyFilter');
+  const resetFilter = document.getElementById('resetFilter');
+  const clearFilter = document.getElementById('clearFilter');
+
+  // In-memory state
+  let state = {
+    banks: [],          // [{id,name}]
+    txns: [],           // [{id,date,type,amount,category,notes,bankId}]
+    selectedBankId: null,
+    filter: null        // {q, from, to, bankId}
+  };
+
+  // Helpers
+  const uid = () => 'id_' + Math.random().toString(36).slice(2,9);
+
+  // date helpers - using DD-MM-YYYY
+  function parseDateDMY(str){
+    if(!str) return null;
+    const [d,m,y] = str.split('-').map(s => parseInt(s,10));
+    if(!d||!m||!y) return null;
+    return new Date(y, m-1, d);
+  }
+  function formatDateDMY(date){
+    if(!(date instanceof Date)) date = new Date(date);
+    const dd = String(date.getDate()).padStart(2,'0');
+    const mm = String(date.getMonth()+1).padStart(2,'0');
+    const yy = String(date.getFullYear());
+    return dd + '-' + mm + '-' + yy;
+  }
+
+  // storage
+  function load(){
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        const parsed = JSON.parse(raw);
+        // validate shape minimally
+        if(Array.isArray(parsed.banks) && Array.isArray(parsed.txns)){
+          state.banks = parsed.banks;
+          state.txns = parsed.txns;
+          state.selectedBankId = parsed.selectedBankId || null;
+          state.filter = null;
+          return;
+        }
+      }
+    } catch(e){
+      console.error('Load error', e);
+    }
+    // fallback: initialize
+    state.banks = DEFAULT_BANKS.map((n) => ({id: uid(), name: n}));
+    state.txns = [];
+    state.selectedBankId = null;
+  }
+  function save(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        banks: state.banks,
+        txns: state.txns,
+        selectedBankId: state.selectedBankId
+      }));
+    }catch(e){ console.error('save error', e); }
+  }
+
+  // UI rendering
+  function renderBanks(){
+    banksList.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    state.banks.forEach(b => {
+      const el = document.createElement('div');
+      el.className = 'bank' + (state.selectedBankId===b.id ? ' selected':'' );
+      el.dataset.id = b.id;
+      el.innerHTML = `
+        <div class="dot" aria-hidden="true"></div>
+        <div class="meta">
+          <div class="name">${escapeHTML(b.name)}</div>
+          <div class="bal small" data-bank="${b.id}"></div>
+        </div>
+        <div class="actions">
+          <button class="action-btn edit" data-edit="${b.id}" title="Rename bank">✎</button>
+          <button class="action-btn del" data-del="${b.id}" title="Delete bank">🗑</button>
+        </div>
+      `;
+      frag.appendChild(el);
+    });
+    banksList.appendChild(frag);
+
+    // bank options
+    bankSelect.innerHTML = '';
+    state.banks.forEach(b=>{
+      const opt = document.createElement('option');
+      opt.value = b.id; opt.textContent = b.name;
+      bankSelect.appendChild(opt);
+    });
+
+    // Bind interactions
+    banksList.querySelectorAll('.bank').forEach(el=>{
+      el.addEventListener('click', (ev)=>{
+        // clicking on action buttons should not toggle selection
+        if(ev.target.closest('button')) return;
+        const id = el.dataset.id;
+        state.selectedBankId = (state.selectedBankId===id ? null : id);
+        render();
+      });
+    });
+    banksList.querySelectorAll('[data-edit]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const id = btn.dataset.edit;
+        const bank = state.banks.find(x=>x.id===id);
+        if(!bank) return;
+        const name = prompt('Rename bank', bank.name);
+        if(name && name.trim()){
+          bank.name = name.trim();
+          save(); render();
+        }
+      });
+    });
+    banksList.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        e.stopPropagation();
+        const id = btn.dataset.del;
+        if(!confirm('Delete this bank? All connected transactions will be kept but bank will be set to "Unassigned".')) return;
+        // remove bank, but keep txns - set bankId to null
+        state.banks = state.banks.filter(b=>b.id!==id);
+        state.txns.forEach(t => { if(t.bankId === id) t.bankId = null; });
+        if(state.selectedBankId === id) state.selectedBankId = null;
+        save(); render();
+      });
+    });
+    // update per-bank balances
+    updateBankBalances();
+  }
+
+ function updateBankBalances(){
+  state.banks.forEach(b=>{
+    const income = state.txns.filter(t => t.bankId===b.id && t.type==='income').reduce((s,t)=>s + Number(t.amount),0);
+    const expense = state.txns.filter(t => t.bankId===b.id && t.type==='expense').reduce((s,t)=>s + Number(t.amount),0);
+    const bal = income - expense;
+    const el = document.querySelector(`[data-bank="${b.id}"]`);
+    const count = state.txns.filter(t=>t.bankId===b.id).length;
+    if(el) el.textContent = `₹${formatNumber(bal)} (${count})`;
+  });
+}
+
+
+  function renderTransactions(){
+    const filter = state.filter || {};
+    let txns = [...state.txns];
+    // apply bank selection
+    if(state.selectedBankId) txns = txns.filter(t => t.bankId === state.selectedBankId);
+    
+
+    // filters
+    if(filter.q){
+      const q = filter.q.toLowerCase();
+      txns = txns.filter(t => (t.category||'').toLowerCase().includes(q) || (t.notes||'').toLowerCase().includes(q));
+    }
+    if(filter.from){
+      txns = txns.filter(t => {
+        const d = parseDateDMY(t.date);
+        return d && d >= filter.from;
+      });
+    }
+    if(filter.to){
+      txns = txns.filter(t => {
+        const d = parseDateDMY(t.date);
+        return d && d <= filter.to;
+      });
+    }
+
+    // sort newest first
+    txns.sort((a,b)=>{
+      const da = parseDateDMY(a.date) || new Date(0);
+      const db = parseDateDMY(b.date) || new Date(0);
+      return db - da;
+    });
+
+    txnTableBody.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    txns.forEach(t=>{
+      const tr = document.createElement('tr');
+      const bankName = (t.bankId ? (state.banks.find(b=>b.id===t.bankId)?.name || 'Unknown') : 'Unassigned');
+      tr.innerHTML = `
+        <td>${escapeHTML(t.date || '')}</td>
+        <td><strong style="color:${t.type==='income' ? '#10b981':'#ef4444'}">${t.type}</strong></td>
+        <td>₹${formatNumber(t.amount)}</td>
+        <td>${escapeHTML(t.category || '')}</td>
+        <td>${escapeHTML(bankName)}</td>
+        <td class="small">${escapeHTML(t.notes || '')}</td>
+        <td>
+          <div class="actions">
+            <button class="action-btn edit" data-edit="${t.id}">Edit</button>
+            <button class="action-btn del" data-del="${t.id}">Del</button>
+          </div>
+        </td>
+      `;
+      frag.appendChild(tr);
+    });
+    txnTableBody.appendChild(frag);
+
+    txnCount.textContent = txns.length + ' transactions';
+    // bind edit/delete
+    txnTableBody.querySelectorAll('[data-edit]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.dataset.edit;
+        openEditTxn(id);
+      });
+    });
+    txnTableBody.querySelectorAll('[data-del]').forEach(b=>{
+      b.addEventListener('click', ()=>{
+        const id = b.dataset.del;
+        if(confirm('Delete this transaction?')) {
+          state.txns = state.txns.filter(t => t.id !== id);
+          save(); render();
+        }
+      });
+    });
+    updateTotals();
+    updateBankBalances();
+  }
+
+  function updateTotals(){
+    const totalIncome = state.txns.filter(t => t.type==='income').reduce((s,t)=> s + Number(t.amount), 0);
+    const totalExpense = state.txns.filter(t => t.type==='expense').reduce((s,t)=> s + Number(t.amount), 0);
+    const net = totalIncome - totalExpense;
+    totalIncomeEl.textContent = '₹' + formatNumber(totalIncome);
+    totalExpenseEl.textContent = '₹' + formatNumber(totalExpense);
+    netBalanceEl.textContent = '₹' + formatNumber(net);
+  }
+
+  // format number with commas and two decimals if needed
+  function formatNumber(n){
+    const x = Number(n) || 0;
+    // show integer if whole, otherwise two decimals
+    const fixed = (Math.abs(x % 1) < 0.000001) ? String(Math.round(x)) : x.toFixed(2);
+    const parts = fixed.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return parts.join('.');
+  }
+
+  // form actions
+  function openEditTxn(id){
+    const t = state.txns.find(x=>x.id===id);
+    if(!t) return;
+    // fill form with txn
+    setType(t.type);
+    bankSelect.value = t.bankId || '';
+    dateInput.value = t.date;
+    amountInput.value = t.amount;
+    categoryInput.value = t.category || '';
+    notesInput.value = t.notes || '';
+    saveTxnBtn.textContent = 'Update Transaction';
+    saveTxnBtn.dataset.editing = id;
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  function resetForm(){
+    setType('income');
+    bankSelect.value = state.banks[0]?.id || '';
+    dateInput.value = formatDateDMY(new Date());
+    amountInput.value = '';
+    categoryInput.value = '';
+    notesInput.value = '';
+    delete saveTxnBtn.dataset.editing;
+    saveTxnBtn.textContent = 'Save Transaction';
+  }
+
+  // type toggle
+  function setType(type){
+    if(type==='income'){
+      typeIncome.classList.add('income'); typeIncome.classList.add('active');
+      typeExpense.classList.remove('active');
+      saveTxnBtn.classList.remove('warn');
+    } else {
+      typeExpense.classList.add('expense'); typeExpense.classList.add('active');
+      typeIncome.classList.remove('active');
+      saveTxnBtn.classList.add('warn');
+    }
+    typeIncome.dataset.type = 'income';
+    typeExpense.dataset.type = 'expense';
+    typeIncome.classList.toggle('active', type==='income');
+    typeExpense.classList.toggle('active', type!=='income');
+    saveTxnBtn.dataset.type = type;
+  }
+
+  // validations
+  function validateForm(){
+    const type = (saveTxnBtn.dataset.type || 'income');
+    const dateStr = dateInput.value.trim();
+    const dateObj = parseDateDMY(dateStr);
+    if(!dateObj) { alert('Please enter a valid date in DD-MM-YYYY'); return false; }
+    const amt = Number(amountInput.value);
+    if(!amt || isNaN(amt) || amt <= 0) { alert('Please enter a positive amount'); return false; }
+    if(!bankSelect.value) { if(!confirm('No bank selected. Continue with Unassigned?')) return false; }
+    return true;
+  }
+
+  // main save handler
+  txnForm.addEventListener('submit', (e)=>{
+    e.preventDefault();
+    if(!validateForm()) return;
+    const type = saveTxnBtn.dataset.type || 'income';
+    const editingId = saveTxnBtn.dataset.editing;
+    const payload = {
+      date: dateInput.value.trim(),
+      amount: Number(Number(amountInput.value).toFixed(2)),
+      category: categoryInput.value.trim(),
+      notes: notesInput.value.trim(),
+      bankId: bankSelect.value || null,
+      type
+    };
+    if(editingId){
+      const idx = state.txns.findIndex(t=>t.id===editingId);
+      if(idx>=0){
+        state.txns[idx] = {...state.txns[idx], ...payload};
+      }
+      delete saveTxnBtn.dataset.editing;
+      saveTxnBtn.textContent = 'Save Transaction';
+    } else {
+      const t = {...payload, id: uid()};
+      state.txns.push(t);
+    }
+    resetForm();
+    save(); render();
+  });
+
+  // type toggle clicks
+  typeIncome.addEventListener('click', ()=> setType('income'));
+  typeExpense.addEventListener('click', ()=> setType('expense'));
+  resetFormBtn.addEventListener('click', resetForm);
+
+  // add bank
+  addBankBtn.addEventListener('click', ()=>{
+    const name = prompt('New bank name');
+    if(name && name.trim()){
+      state.banks.push({id: uid(), name: name.trim()});
+      save(); render();
+    }
+  });
+
+  resetBanksBtn.addEventListener('click', ()=>{
+    if(!confirm('Reset banks to default 12? This will remove custom banks but keep transactions (they will become Unassigned if their bank is removed).')) return;
+    state.banks = DEFAULT_BANKS.map((n) => ({id: uid(), name: n}));
+    // if any txn bankId not found, set to null
+    const bankIds = new Set(state.banks.map(b=>b.id));
+    state.txns.forEach(t => { if(t.bankId && !bankIds.has(t.bankId)) t.bankId = null; });
+    save(); render();
+  });
+
+  clearAllBtn.addEventListener('click', ()=>{
+    if(!confirm('Clear all stored data (banks + transactions)? This cannot be undone.')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    load(); render();
+  });
+
+  // export / import
+  exportBtn.addEventListener('click', ()=>{
+    const data = {banks: state.banks, txns: state.txns, savedAt: new Date().toISOString()};
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'income-expense-data.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  importBtn.addEventListener('click', ()=> fileInput.click());
+  fileInput.addEventListener('change', async (ev)=>{
+    const f = ev.target.files[0];
+    if(!f) return;
+    try {
+      const txt = await f.text();
+      const parsed = JSON.parse(txt);
+      if(!Array.isArray(parsed.banks) || !Array.isArray(parsed.txns)) {
+        alert('Invalid file format');
+        return;
+      }
+      if(!confirm('Importing will replace current banks and transactions. Continue?')) return;
+      state.banks = parsed.banks.map(b => ({id: b.id || uid(), name: b.name || 'Unnamed'}));
+      state.txns = parsed.txns.map(t => ({
+        id: t.id || uid(),
+        date: t.date || formatDateDMY(new Date()),
+        type: t.type === 'expense' ? 'expense' : 'income',
+        amount: Number(t.amount) || 0,
+        category: t.category || '',
+        notes: t.notes || '',
+        bankId: state.banks.some(b=>b.id===t.bankId) ? t.bankId : null
+      }));
+      state.selectedBankId = null;
+      save(); render();
+      alert('Imported successfully');
+    } catch(err){
+      console.error(err);
+      alert('Error importing file');
+    } finally {
+      fileInput.value = '';
+    }
+  });
+
+  // search / filter
+  applyFilter.addEventListener('click', ()=>{
+    const q = searchInput.value.trim();
+    const fd = fromDate.value.trim();
+    const td = toDate.value.trim();
+    const f = {};
+    if(q) f.q = q;
+    if(fd){ const d = parseDateDMY(fd); if(d) f.from = d; }
+    if(td){ const d = parseDateDMY(td); if(d) f.to = d; }
+    state.filter = f;
+    renderTransactions();
+  });
+  resetFilter.addEventListener('click', ()=>{
+    state.filter = null;
+    searchInput.value=''; fromDate.value=''; toDate.value='';
+    renderTransactions();
+  });
+  clearFilter.addEventListener('click', ()=>{
+    state.selectedBankId = null;
+    render();
+  });
+
+  // utility escape
+  function escapeHTML(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+
+  // initial load & render
+  function render(){
+    renderBanks();
+    // ensure bankSelect has a selection
+    if(!bankSelect.value && state.banks[0]) bankSelect.value = state.banks[0].id;
+    renderTransactions();
+  }
+
+  // start
+  load();
+  // if there are no banks (edge) reinit
+  if(!state.banks || state.banks.length === 0){
+    state.banks = DEFAULT_BANKS.map((n) => ({id: uid(), name: n}));
+  }
+  resetForm();
+  render();
+})();
+</script>
+</body>
+</html>
